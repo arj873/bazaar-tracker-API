@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+    database:
+        image: timescale/timescaledb:latest-pg15
+        restart: always
+        environment:
+            - POSTGRES_USER=user
+            - POSTGRES_PASSWORD=postgres123
+            - POSTGRES_DB=bazz
+        ports:
+            - '5436:5432' 
+        expose:
+            - '5436'
+        volumes:
+            - db-data:/var/lib/postgresql/data
+            # - ./defaults_ig/setup.sql:/docker-entrypoint-initdb.d/init.sql
+    pgadmin4:
+        image: dpage/pgadmin4:latest
+        ports:
+            - "8887:80"
+        environment:
+            - PGADMIN_DEFAULT_EMAIL=email@email.com
+            - PGADMIN_DEFAULT_PASSWORD=pass
+        restart: unless-stopped
+        volumes:
+            - pgadmin:/var/lib/pgadmin
+
+#   cache:
+#     image: redis:7.0.11
+#     restart: always
+#     ports:
+#         - '6380:6379'
+#     command: redis-server --save 20 1 --loglevel warning --requirepass redisCachePassword123
+#     expose:
+#         - '6379'
+#     volumes:
+#         - redis-data:/data
+#   logging:
+#     image: grafana/grafana-oss:9.5.1
+#     restart: unless-stopped
+#     ports:
+#         - '8081:3000'
+#     expose:
+#         - '8081'
+#     volumes:
+#         - ./defaults_ig/Grafana/Datasources:/etc/grafana/provisioning/datasources
+#         - ./defaults_ig/Grafana/Dashboards:/etc/grafana/provisioning/dashboards
+#         - ./defaults_ig/Grafana/config.ini:/etc/grafana/config.ini
+#         - grafana-data:/var/lib/grafana
+#     depends_on:
+#         - prometheus
+#   prometheus:
+#     image: prom/prometheus:v2.43.1
+#     restart: unless-stopped
+#     ports:
+#         - '9090:9090'
+#     expose:
+#         - '9090'
+#     volumes:
+#         - ./defaults_ig/Prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+#         - prometheus-data:/data
+        
+volumes:
+    db-data: {}
+    grafana-data: {}
+    prometheus-data: {}
+    redis-data: {}
+    pgadmin: {}
