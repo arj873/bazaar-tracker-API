@@ -7,6 +7,8 @@ use reqwest::{self, Error};
 use serde_json::{Value,Result};
 use chrono::{Utc, TimeZone, NaiveDateTime,DateTime};
 use substring::Substring;
+use tokio::time::{sleep, Duration};
+use std::thread;
 
 #[tokio::main]
 async fn main(){
@@ -25,10 +27,41 @@ async fn main(){
     // println!("{:?}",getBazData().await);
     // println!("{}",getBazData().await);
     // make_new_time_thing().await;
+    let mut it = 0;
+
+    loop {
+        let start_time = std::time::Instant::now();
+        println!("start {}", it);
+        addAllItems().await;
+        println!("step 1");
+        let t3 = thread::spawn(|| addQInfo());
+        println!("step 2");
+        let t1 = thread::spawn(|| addBuyInfo());
+        println!("step 3");
+        let t2 = thread::spawn(|| addSellInfo());
+        println!("step 4");
+        t1.join().unwrap().await;
+        t2.join().unwrap().await;
+        t3.join().unwrap().await;
+        it += 1;
+        println!("done {}", it);
+
+        let elapsed_time = start_time.elapsed();
+        println!("Elapsed: {:.2?}", elapsed_time);
+        // Subtract the elapsed time from the desired interval of 20 seconds
+        let sleep_duration = Duration::from_secs(20).checked_sub(elapsed_time);
+
+        match sleep_duration {
+            Some(duration) => thread::sleep(duration),
+            None => continue, // Execution took longer than 20 seconds, immediately run again
+        }
+    }
+
+    // make_new_time_thing().await;
     // addAllItems().await;
-    addQInfo().await;
-    addBuyInfo().await;
-    addSellInfo().await;
+    // addQInfo().await;
+    // addBuyInfo().await;
+    // addSellInfo().await;
 }
 
 async fn getBazData() -> std::string::String{
@@ -67,7 +100,7 @@ async fn addAllItems(){
             let key_var = Some(key).unwrap();
             let value_var = Some(value).unwrap();
             pool.execute(sqlx::query("
-                INSERT INTO items (item_id,name,is_delisted) VALUES ($1,'sdfsdf',false)
+                INSERT INTO items (item_id,is_delisted) VALUES ($1,false) ON CONFLICT (item_id) DO NOTHING
             ").bind(key_var)).await.expect("bruh items");
 
         }
@@ -96,7 +129,9 @@ async fn addQInfo(){
                 pool.execute(sqlx::query("
                     INSERT INTO qick_info (item_id, time, sellPrice, sellVolume, sellMovingWeek, sellOrders, buyPrice, buyVolume, buyMovingWeek, buyOrders) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["sellPrice"].as_f64()).bind(&uh2["sellVolume"].as_f64()).bind(&uh2["sellMovingWeek"].as_f64()).bind(&uh2["sellOrders"].as_f64()).bind(&uh2["buyPrice"].as_f64()).bind(&uh2["buyVolume"].as_f64()).bind(&uh2["buyMovingWeek"].as_f64()).bind(&uh2["buyOrders"].as_f64())).await.expect("bruh2 qinfo");
+
                 }
+
         }
 
     
@@ -128,7 +163,7 @@ async fn addBuyInfo(){
                 // println!("{}",uh2);
                 pool.execute(sqlx::query("
                     INSERT INTO summ_buy (item_id, time, amount, price_per_unit, orders) VALUES ($1, $2, $3, $4, $5)
-                ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["amount"]).bind(&uh2["pricePerUnit"]).bind(&uh2["orders"]));
+                ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["amount"].as_f64()).bind(&uh2["pricePerUnit"].as_f64()).bind(&uh2["orders"].as_f64())).await.expect("bruh2 qinfo");
                 }
         }
     }
@@ -155,10 +190,10 @@ async fn addSellInfo(){
                     ").bind(&value_var["product_id"].as_str()).bind(&datetime)).await.expect("bruh2 qinfo");
                     for uh2 in value_var["sell_summary"].as_array().unwrap() {
                         // println!("{}",uh2);
-                        println!("SLDFHLKSDFKLLKFHSDKJHFSHDFHKSJDF");
+                        // println!("SLDFHLKSDFKLLKFHSDKJHFSHDFHKSJDF");
                         pool.execute(sqlx::query("
                             INSERT INTO summ_sell (item_id, time, amount, price_per_unit, orders) VALUES ($1, $2, $3, $4, $5)
-                        ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["amount"]).bind(&uh2["pricePerUnit"]).bind(&uh2["orders"]));
+                        ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["amount"].as_f64()).bind(&uh2["pricePerUnit"].as_f64()).bind(&uh2["orders"].as_f64())).await.expect("bruh2 qinfo");
                         }
                 }
             }
@@ -175,7 +210,6 @@ async fn make_new_time_thing(){
         CREATE TABLE items(
             id SERIAL NOT NULL,
             item_id TEXT NOT NULL,
-            name TEXT NOT NULL,
             is_delisted BOOLEAN NOT NULL,
             PRIMARY KEY (item_id)
         );
@@ -206,7 +240,7 @@ async fn make_new_time_thing(){
             time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
             PRIMARY KEY (item_id, time),
             CONSTRAINT fk_item_id FOREIGN KEY (item_id) REFERENCES items (item_id)
-        ); 
+        );
     ")).await.expect("buy summ error");
 
     pool.execute(sqlx::query("
@@ -215,7 +249,7 @@ async fn make_new_time_thing(){
             time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
             PRIMARY KEY (item_id, time),
             CONSTRAINT fk_item_id FOREIGN KEY (item_id) REFERENCES items (item_id)
-        );   
+        );
     ")).await.expect("sell summ error");
 
     pool.execute(sqlx::query("
@@ -225,7 +259,6 @@ async fn make_new_time_thing(){
             amount FLOAT NOT NULL ,
             price_per_unit FLOAT NOT NULL ,
             orders FLOAT NOT NULL,
-            PRIMARY KEY (time, item_id),
             CONSTRAINT fk_item_id2 FOREIGN KEY (item_id, time) REFERENCES sell_summ (item_id, time)
         );
     ")).await.expect("summery sell");
@@ -237,10 +270,10 @@ async fn make_new_time_thing(){
         amount FLOAT NOT NULL ,
         price_per_unit FLOAT NOT NULL ,
         orders FLOAT NOT NULL,
-        PRIMARY KEY (time,item_id),
         CONSTRAINT fk_item_id2 FOREIGN KEY (item_id, time) REFERENCES buy_summ (item_id, time)
     );
 ")).await.expect("summery buy");
+
 
     pool.execute(sqlx::query("
         CREATE INDEX ON sell_summ (item_id,time DESC);;        
