@@ -1,70 +1,31 @@
-// use std::future::Future;
 
-use serde::de::value;
-// use dashmap::DashMap;
-use sqlx::{Connection,postgres::PgPoolOptions, Executor, PgConnection, types::uuid::timestamp};
+use sqlx::{Connection,postgres::PgPoolOptions, Executor};
 use reqwest::{self, Error};
 use serde_json::{Value,Result};
 use chrono::{Utc, TimeZone, NaiveDateTime,DateTime};
-use substring::Substring;
 use tokio::time::{sleep, Duration};
 use std::thread;
 
 #[tokio::main]
 async fn main(){
-
-    // let pool = PgPoolOptions::new()
-    //     .max_connections(5)
-    //     .connect("postgres://user:postgres123@localhost:5436/bazz")
-    //     .await
-    //     .unwrap();
-
-
-
-//  Ok(())
-
-    // test().await;
-    // println!("{:?}",getBazData().await);
-    // println!("{}",getBazData().await);
     make_new_time_thing().await;
     let mut it = 0;
     let start_time2 = std::time::Instant::now();
     loop {
         let start_time = std::time::Instant::now();
-        println!("start {}", it);
-        addAllItems().await;
-        // println!("step 1");
-        // let t3 = thread::spawn(|| addQInfo());
-        // println!("step 2");
-        // let t1 = thread::spawn(|| addBuyInfo());
-        // println!("step 3");
-        // let t2 = thread::spawn(|| addSellInfo());
-        // println!("step 4");
-        // t1.join().unwrap().await;
-        // t2.join().unwrap().await;
-        // t3.join().unwrap().await;
-        addSellInfo().await;
-        addBuyInfo().await;
-        addQInfo().await;
-        it += 1;
-        println!("done {}", it);
-
+        add_all_items().await;
+        add_sell_info().await;
+        add_buy_info().await;
+        add_qinfo().await;
         let elapsed_time = start_time.elapsed();
-        println!("Elapsed: {:.2?} \nTotal elapsed: {:.2?}", elapsed_time, start_time2.elapsed());
-        // Subtract the elapsed time from the desired interval of 20 seconds
+        println!("Round: {} \nElapsed: {:.2?} \nTotal elapsed: {:.2?}", it, elapsed_time, start_time2.elapsed());
+        it += 1;
         let sleep_duration = Duration::from_secs(20).checked_sub(elapsed_time);
-
         match sleep_duration {
             Some(duration) => thread::sleep(duration),
-            None => continue, // Execution took longer than 20 seconds, immediately run again
+            None => continue,
         }
     }
-
-    // make_new_time_thing().await;
-    // addAllItems().await;
-    // addQInfo().await;
-    // addBuyInfo().await;
-    // addSellInfo().await;
 
 }
 
@@ -72,27 +33,13 @@ async fn main(){
 
 
 
-async fn getBazData() -> std::string::String{
+async fn get_baz_data() -> std::string::String{
     let resp = reqwest::get("https://api.hypixel.net/skyblock/bazaar").await;
     return resp.unwrap().text().await.unwrap();
 }
 
 
-async fn test(){
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect("postgres://user:postgres123@localhost:5436/bazz")
-        .await
-        .unwrap();
-
-    let tmp = pool.execute(sqlx::query("
-    SELECT * FROM items
-    ")).await;
-    println!("{:?}", tmp);
-
-}
-
-async fn addAllItems(){
+async fn add_all_items(){
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect("postgres://user:postgres123@localhost:5436/bazz")
@@ -100,9 +47,7 @@ async fn addAllItems(){
         .unwrap();
 
 
-    let bzzdata: Value = serde_json::from_str((getBazData().await).as_str()).unwrap();
-    // println!("{}",bzzdata["products"].as);
-
+    let bzzdata: Value = serde_json::from_str((get_baz_data().await).as_str()).unwrap();
     for  uh in bzzdata["products"].as_object().iter() {
         for (key, value) in uh.iter() {
             let key_var = Some(key).unwrap();
@@ -115,32 +60,14 @@ async fn addAllItems(){
     }
 }
 
-async fn addQInfo(){
+async fn add_qinfo(){
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect("postgres://user:postgres123@localhost:5436/bazz")
         .await
         .unwrap();
 
-    let bzzdata: Value = serde_json::from_str((getBazData().await).as_str()).unwrap();
-
-    // for  uh in bzzdata["products"].as_object().iter() {
-    //     for (key, value) in uh.iter() {
-    //         let key_var = Some(key).unwrap();
-    //         let value_var = Some(value).unwrap();
-    //         for uh2 in value_var["quick_status"].as_object().iter() {
-    //             let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
-    //             let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
-    //             let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-    //             let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-    //             // println!("{}",datetime.to_string());
-    //             pool.execute(sqlx::query("
-    //                 INSERT INTO qick_info (item_id, time, sellPrice, sellVolume, sellMovingWeek, sellOrders, buyPrice, buyVolume, buyMovingWeek, buyOrders) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    //         ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["sellPrice"].as_f64()).bind(&uh2["sellVolume"].as_f64()).bind(&uh2["sellMovingWeek"].as_f64()).bind(&uh2["sellOrders"].as_f64()).bind(&uh2["buyPrice"].as_f64()).bind(&uh2["buyVolume"].as_f64()).bind(&uh2["buyMovingWeek"].as_f64()).bind(&uh2["buyOrders"].as_f64())).await.expect("bruh2 qinfo");
-    //
-    //             }
-    //     }
-    // }
+    let bzzdata: Value = serde_json::from_str((get_baz_data().await).as_str()).unwrap();
 
     let mut transaction = pool.begin().await.expect("Failed to begin transaction");
 
@@ -151,7 +78,6 @@ async fn addQInfo(){
                 let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
                 let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
                 let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-                let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
             transaction.execute(sqlx::query("
                 INSERT INTO qick_info (item_id, time, sellPrice, sellVolume, sellMovingWeek, sellOrders, buyPrice, buyVolume, buyMovingWeek, buyOrders) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["sellPrice"].as_f64()).bind(&uh2["sellVolume"].as_f64()).bind(&uh2["sellMovingWeek"].as_f64()).bind(&uh2["sellOrders"].as_f64()).bind(&uh2["buyPrice"].as_f64()).bind(&uh2["buyVolume"].as_f64()).bind(&uh2["buyMovingWeek"].as_f64()).bind(&uh2["buyOrders"].as_f64())).await.expect("bruh2 qinfo");
@@ -161,14 +87,14 @@ async fn addQInfo(){
     transaction.commit().await.expect("Failed to commit transaction");
 }
 
-async fn addBuyInfo(){
+async fn add_buy_info(){
     let pool = PgPoolOptions::new()
-    .max_connections(5)
-    .connect("postgres://user:postgres123@localhost:5436/bazz")
-    .await
-    .unwrap();
+        .max_connections(5)
+        .connect("postgres://user:postgres123@localhost:5436/bazz")
+        .await
+        .unwrap();
 
-    let bzzdata: Value = serde_json::from_str((getBazData().await).as_str()).unwrap();
+    let bzzdata: Value = serde_json::from_str((get_baz_data().await).as_str()).unwrap();
 
     for  uh in bzzdata["products"].as_object().iter() {
         for (key, value) in uh.iter() {
@@ -177,7 +103,6 @@ async fn addBuyInfo(){
             let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
             let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
             let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-            let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
             pool.execute(sqlx::query("
             INSERT INTO buy_summ (item_id, time) VALUES ($1, $2)
             ").bind(&value_var["product_id"].as_str()).bind(&datetime)).await.expect("bruh2 qinfo");
@@ -196,13 +121,13 @@ async fn addBuyInfo(){
     }
 }
 
-async fn addSellInfo() {
+async fn add_sell_info() {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect("postgres://user:postgres123@localhost:5436/bazz")
         .await
         .unwrap();
-    let bzzdata: Value = serde_json::from_str((getBazData().await).as_str()).unwrap();
+    let bzzdata: Value = serde_json::from_str((get_baz_data().await).as_str()).unwrap();
 
     for uh in bzzdata["products"].as_object().iter() {
         for (key, value) in uh.iter() {
@@ -211,11 +136,9 @@ async fn addSellInfo() {
             let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
             let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
             let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-            let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
             pool.execute(sqlx::query("
                     INSERT INTO sell_summ (item_id, time) VALUES ($1, $2)
                     ").bind(&value_var["product_id"].as_str()).bind(&datetime)).await.expect("bruh2 qinfo");
-
 
             let mut transaction = pool.begin().await.expect("Failed to begin transaction");
             for uh2 in value_var["sell_summary"].as_array().unwrap() {
@@ -232,10 +155,10 @@ async fn addSellInfo() {
 
 async fn make_new_time_thing(){
     let pool = PgPoolOptions::new()
-    .max_connections(5)
-    .connect("postgres://user:postgres123@localhost:5436/bazz")
-    .await
-    .unwrap();
+        .max_connections(5)
+        .connect("postgres://user:postgres123@localhost:5436/bazz")
+        .await
+        .unwrap();
 
     pool.execute(sqlx::query("
         CREATE TABLE IF NOT EXISTS items(
@@ -295,15 +218,15 @@ async fn make_new_time_thing(){
     ")).await.expect("summery sell");
 
     pool.execute(sqlx::query("
-    CREATE TABLE IF NOT EXISTS summ_buy(
-        item_id TEXT NOT NULL,
-        time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-        amount FLOAT NOT NULL ,
-        price_per_unit FLOAT NOT NULL ,
-        orders FLOAT NOT NULL,
-        CONSTRAINT fk_item_id2 FOREIGN KEY (item_id, time) REFERENCES buy_summ (item_id, time)
-    );
-")).await.expect("summery buy");
+        CREATE TABLE IF NOT EXISTS summ_buy(
+            item_id TEXT NOT NULL,
+            time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            amount FLOAT NOT NULL ,
+            price_per_unit FLOAT NOT NULL ,
+            orders FLOAT NOT NULL,
+            CONSTRAINT fk_item_id2 FOREIGN KEY (item_id, time) REFERENCES buy_summ (item_id, time)
+        );
+    ")).await.expect("summery buy");
 
 
     pool.execute(sqlx::query("
