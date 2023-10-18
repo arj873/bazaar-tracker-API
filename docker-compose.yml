@@ -26,16 +26,16 @@ services:
         volumes:
             - pgadmin:/var/lib/pgadmin
 
-#   cache:
-#     image: redis:7.0.11
-#     restart: always
-#     ports:
-#         - '6380:6379'
-#     command: redis-server --save 20 1 --loglevel warning --requirepass redisCachePassword123
-#     expose:
-#         - '6379'
-#     volumes:
-#         - redis-data:/data
+    redis-cache:
+        image: redis:7.0.11
+        restart: always
+        ports:
+            - '6380:6379'
+        command: redis-server --save 20 1 --loglevel warning --requirepass redisCachePassword123
+        expose:
+            - '6379'
+        volumes:
+            - redis-data:/data
 #   logging:
 #     image: grafana/grafana-oss:9.5.1
 #     restart: unless-stopped
