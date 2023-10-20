@@ -1,74 +1,132 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::thread;
+use std::thread::current;
 use sqlx::{Connection, postgres::PgPoolOptions, Executor, Row, FromRow, PgPool};
 use reqwest::{self};
 use serde_json::{Value};
 use chrono::{Utc, NaiveDateTime,DateTime};
-use chrono::format::Item;
-use sqlx::postgres::PgQueryResult;
 use tokio::time::{Duration};
 use warp::Filter;
-use serde::{Deserialize, Serialize};
-use tokio::runtime::Runtime;
-use tokio::task;
-
+use local_ip_address::local_ip;
+use warp::reply::Reply;
+use warp::http::Response;
 
 #[derive(serde::Serialize, FromRow, Debug)]
 pub struct Items {
     pub id: i32,
-    pub item_id: String,
+    pub item_id: std::string::String,
     pub is_del: bool,
 }
+
+#[derive(serde::Serialize, FromRow, Debug)]
+pub struct QuickInfo {
+    pub item_id: std::string::String,
+    pub time: DateTime<Utc>,
+    pub sell_price: f64,
+    pub sell_volume: f64,
+    pub sell_moving_week: f64,
+    pub sell_orders: f64,
+    pub buy_price: f64,
+    pub buy_volume: f64,
+    pub buy_moving_week: f64,
+    pub buy_orders: f64,
+}
+
+
 #[tokio::main]
 async fn main(){
     println!("Hello, world!");
     make_new_time_thing().await;
     let tsk1 = async { scrape().await };
     let tsk2 = async { wrp().await };
-    let tsk3 = async { wrp2().await };
-    tokio::join!(tsk1, tsk2, tsk3);
+    tokio::join!(tsk1, tsk2);
 }
 
 
 async fn wrp() {
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect("postgres://user:postgres123@localhost:5436/bazz")
-        .await
-        .unwrap();
+    let my_local_ip = local_ip();
 
-    let get_items_route = warp::path("items")
-        .and(warp::get())
-        .and(warp::any().map(move || pool.clone()))
-        .and_then(get_items);
+    if let Ok(my_local_ip) = my_local_ip {
+        println!("This is my local IP address: {:?}", my_local_ip);
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect("postgres://user:postgres123@localhost:5436/bazz")
+            .await
+            .unwrap();
+        let hello_world = warp::path::end().map(|| "Hello, World at root!");
 
-    warp::serve(get_items_route)
-        .run(([127, 0, 0, 1], 3030))
-        .await;
+        let get_items_route = warp::path("items")
+            .and(warp::get())
+            .and(warp::any().map(move || pool.clone()))
+            .and_then(get_items);
+
+        let get_item_curr_price = warp::path("item")
+            .and(warp::path::param::<String>())
+            .and(warp::get())
+            .and_then(get_curr_price);
+
+        let routes = warp::get().and(
+            hello_world
+                    .or(get_items_route)
+                    .or(get_item_curr_price)
+        );
+        let tsk1 = async { warp::serve(routes.clone())
+            .run(([127, 0, 0, 1], 3031))
+            .await};
+        let tsk2 = async { warp::serve(routes.clone())
+            .run((my_local_ip, 3031))
+            .await};
+        tokio::join!(tsk1, tsk2);
+
+    } else {
+        println!("Error getting local IP: {:?}", my_local_ip);
+    }
 
 
 }
 
 
-async fn wrp2() {
+
+async fn get_curr_price(item_id: std::string::String) -> Result<impl warp::Reply, warp::Rejection> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect("postgres://user:postgres123@localhost:5436/bazz")
         .await
         .unwrap();
+    println!("get items234234");
+    println!("{}", item_id);
+    let items = sqlx::query("SELECT item_id, time::TIMESTAMPTZ, sell_price, sell_volume, sell_moving_week, sell_orders, buy_price, buy_volume, buy_moving_week, buy_orders FROM qick_info \
+        WHERE item_id = $1 \
+        ORDER BY time DESC \
+        LIMIT 1")
+        .bind(item_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error: {}", e);
+            warp::reject()
+        })?;
 
-    let get_items_route = warp::path("items")
-        .and(warp::get())
-        .and(warp::any().map(move || pool.clone()))
-        .and_then(get_items);
-    warp::serve(get_items_route)
-        .run(([10, 30, 173, 148], 3031))
-        .await;
+    let items2: Vec<QuickInfo> = items
+        .into_iter()
 
+        .map(|row| QuickInfo {
+            item_id: row.get("item_id"),
+            time: row.get("time"),
+            sell_price: row.get("sell_price"),
+            sell_volume: row.get("sell_volume"),
+            sell_moving_week: row.get("sell_moving_week"),
+            sell_orders: row.get("sell_orders"),
+            buy_price: row.get("buy_price"),
+            buy_volume: row.get("buy_volume"),
+            buy_moving_week: row.get("buy_moving_week"),
+            buy_orders: row.get("buy_orders")
+        })
+        .collect();
+
+    Ok(warp::reply::json(&items2))
 
 }
-
 
 async fn get_items(pool: PgPool) -> Result<impl warp::Reply, warp::Rejection> {
     println!("get items");
@@ -99,9 +157,9 @@ async fn scrape(){
     loop {
         let start_time = std::time::Instant::now();
         add_all_items().await;
+        add_qinfo().await;
         add_sell_info().await;
         add_buy_info().await;
-        add_qinfo().await;
         let elapsed_time = start_time.elapsed();
         println!("Round: {} \nElapsed: {:.2?} \nTotal elapsed: {:.2?}", it, elapsed_time, start_time2.elapsed());
         it += 1;
@@ -158,8 +216,8 @@ async fn add_qinfo(){
                 let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
                 let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
                 let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-            transaction.execute(sqlx::query("
-                INSERT INTO qick_info (item_id, time, sellPrice, sellVolume, sellMovingWeek, sellOrders, buyPrice, buyVolume, buyMovingWeek, buyOrders) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                transaction.execute(sqlx::query("
+                INSERT INTO qick_info (item_id, time, sell_price, sell_volume, sell_moving_week, sell_orders, buy_price, buy_volume, buy_moving_week, buy_orders) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (item_id, time) DO NOTHING
             ").bind(&value_var["product_id"].as_str()).bind(&datetime).bind(&uh2["sellPrice"].as_f64()).bind(&uh2["sellVolume"].as_f64()).bind(&uh2["sellMovingWeek"].as_f64()).bind(&uh2["sellOrders"].as_f64()).bind(&uh2["buyPrice"].as_f64()).bind(&uh2["buyVolume"].as_f64()).bind(&uh2["buyMovingWeek"].as_f64()).bind(&uh2["buyOrders"].as_f64())).await.expect("bruh2 qinfo");
             }
         }
@@ -183,8 +241,8 @@ async fn add_buy_info(){
             let timestamp = bzzdata["lastUpdated"].to_string().parse::<i64>().unwrap();
             let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
             let datetime = DateTime::<Utc>::from_utc(naive, Utc);
-            pool.execute(sqlx::query("
-            INSERT INTO buy_summ (item_id, time) VALUES ($1, $2)
+            let tmp = pool.execute(sqlx::query("
+            INSERT INTO buy_summ (item_id, time) VALUES ($1, $2) ON CONFLICT (item_id, time) DO NOTHING
             ").bind(&value_var["product_id"].as_str()).bind(&datetime)).await.expect("bruh2 qinfo");
 
             let mut transaction = pool.begin().await.expect("Failed to begin transaction");
@@ -217,7 +275,7 @@ async fn add_sell_info() {
             let naive = NaiveDateTime::from_timestamp_opt(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000).unwrap();
             let datetime = DateTime::<Utc>::from_utc(naive, Utc);
             pool.execute(sqlx::query("
-                    INSERT INTO sell_summ (item_id, time) VALUES ($1, $2)
+                    INSERT INTO sell_summ (item_id, time) VALUES ($1, $2) ON CONFLICT (item_id, time) DO NOTHING
                     ").bind(&value_var["product_id"].as_str()).bind(&datetime)).await.expect("bruh2 qinfo");
 
             let mut transaction = pool.begin().await.expect("Failed to begin transaction");
@@ -298,14 +356,14 @@ async fn make_new_time_thing(){
         CREATE TABLE IF NOT EXISTS qick_info(
             item_id TEXT NOT NULL,
             time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            sellPrice FLOAT NOT NULL ,
-            sellVolume FLOAT NOT NULL ,
-            sellMovingWeek FLOAT NOT NULL ,
-            sellOrders FLOAT NOT NULL ,
-            buyPrice FLOAT NOT NULL,
-            buyVolume FLOAT NOT NULL ,
-            buyMovingWeek FLOAT NOT NULL ,
-            buyOrders FLOAT NOT NULL,
+            sell_price FLOAT NOT NULL ,
+            sell_volume FLOAT NOT NULL ,
+            sell_moving_week FLOAT NOT NULL ,
+            sell_orders FLOAT NOT NULL ,
+            buy_price FLOAT NOT NULL,
+            buy_volume FLOAT NOT NULL ,
+            buy_moving_week FLOAT NOT NULL ,
+            buy_orders FLOAT NOT NULL,
             PRIMARY KEY (item_id, time),
             CONSTRAINT fk_item FOREIGN KEY (item_id) REFERENCES items (item_id)
         );
